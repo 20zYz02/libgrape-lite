@@ -37,11 +37,17 @@ class HashPartitioner {
   HashPartitioner(size_t frag_num, std::vector<OID_T>&) : fnum_(frag_num) {}
 
   inline fid_t GetPartitionId(const OID_T& oid) const {
+	      auto iter = override_map_.find(oid);
+    if (iter != override_map_.end()) {
+      return iter->second;
+    }
+    //zyz
     return static_cast<fid_t>(static_cast<uint64_t>(oid) % fnum_);
   }
 
   void SetPartitionId(const OID_T& oid, fid_t fid) {
-    LOG(FATAL) << "not support";
+   //  LOG(FATAL) << "not support";
+    override_map_[oid] = fid;//zyz
   }
 
   HashPartitioner& operator=(const HashPartitioner& other) {
@@ -49,6 +55,7 @@ class HashPartitioner {
       return *this;
     }
     fnum_ = other.fnum_;
+    override_map_ = other.override_map_;//zyz
     return *this;
   }
 
@@ -57,6 +64,7 @@ class HashPartitioner {
       return *this;
     }
     fnum_ = other.fnum_;
+    override_map_ = std::move(other.override_map_);//zyz
     return *this;
   }
 
@@ -72,6 +80,7 @@ class HashPartitioner {
 
  private:
   fid_t fnum_;
+  ska::flat_hash_map<OID_T, fid_t> override_map_;//zyz
 };
 
 template <>
@@ -135,6 +144,7 @@ class HashPartitioner<std::string> {
   fid_t fnum_;
 };
 
+
 /**
  * @brief SegmentedPartitioner is a partitioner with a strategy of chunking
  * original vertex_ids.
@@ -149,9 +159,16 @@ class SegmentedPartitioner {
   SegmentedPartitioner(size_t frag_num, std::vector<OID_T>& oid_list) {
     fnum_ = frag_num;
     size_t vnum = oid_list.size();
+
+    //size_t empty_prefix = 3;  // ������ 前几个分片不放点
+    //size_t active_fnum = fnum_ - empty_prefix;
+    //CHECK_GE(fnum_, empty_prefix + 1);  // 至少保留一个分区
+    //size_t frag_vnum = (vnum + active_fnum - 1) / active_fnum;
     size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
+
     o2f_.reserve(vnum);
     for (size_t i = 0; i < vnum; ++i) {
+     // fid_t fid = static_cast<fid_t>(i / frag_vnum + empty_prefix);
       fid_t fid = static_cast<fid_t>(i / frag_vnum);
       o2f_.emplace(oid_list[i], fid);
     }
@@ -209,10 +226,17 @@ class SegmentedPartitioner<std::string> {
   SegmentedPartitioner(size_t frag_num, std::vector<oid_t>& oid_list) {
     fnum_ = frag_num;
     size_t vnum = oid_list.size();
+    // size_t empty_prefix = 3;  // ������ 前几个分片不放点
+    //size_t active_fnum = fnum_ - empty_prefix;
+    //CHECK_GE(fnum_, empty_prefix + 1);  // 至少保留一个分区
+    //size_t frag_vnum = (vnum + active_fnum - 1) / active_fnum;
+
     size_t frag_vnum = (vnum + fnum_ - 1) / fnum_;
     o2f_.reserve(vnum);
     for (size_t i = 0; i < vnum; ++i) {
+     // fid_t fid = static_cast<fid_t>(i / frag_vnum+ empty_prefix);
       fid_t fid = static_cast<fid_t>(i / frag_vnum);
+
       o2f_.emplace(oid_list[i], fid);
     }
   }

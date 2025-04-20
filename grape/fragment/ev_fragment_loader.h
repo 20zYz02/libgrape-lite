@@ -125,7 +125,20 @@ class EVFragmentLoader {
       io_adaptor->Close();
     }
 
-    partitioner_t partitioner(comm_spec_.fnum(), id_list);
+//    partitioner_t partitioner(comm_spec_.fnum(), id_list);
+    int privacy_counter = 0;
+    SegmentedPartitioner<oid_t> partitioner(comm_spec_.fnum(), id_list);
+//HashPartitioner<oid_t> partitioner(comm_spec_.fnum());
+// ✅ 设置隐私点归到分片 0，其余使用默认规则（范围划分）
+for (size_t i = 0; i < id_list.size(); ++i) {
+  if (vprivacy_list[i] == 1) {
+   // partitioner.SetPartitionId(id_list[i], 0);
+       fid_t fid = privacy_counter % 3;
+    partitioner.SetPartitionId(id_list[i], fid);
+    ++privacy_counter;
+  }
+}
+
 
     basic_fragment_loader_.SetPartitioner(std::move(partitioner));
 

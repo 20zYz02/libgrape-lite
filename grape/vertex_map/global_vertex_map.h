@@ -120,7 +120,7 @@ class GlobalVertexMapBuilder {
  * @tparam VID_T
  */
 template <typename OID_T, typename VID_T,
-          typename PARTITIONER_T = HashPartitioner<OID_T>>
+          typename PARTITIONER_T = SegmentedPartitioner<OID_T>>
 class GlobalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   // TODO(lxj): to support shared-memory for workers on same host (auto apps)
 

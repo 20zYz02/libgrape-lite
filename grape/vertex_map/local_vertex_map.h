@@ -122,7 +122,7 @@ class LocalVertexMapBuilder {
 };
 
 template <typename OID_T, typename VID_T,
-          typename PARTITIONER_T = HashPartitioner<OID_T>>
+          typename PARTITIONER_T = SegmentedPartitioner<OID_T>>
 class LocalVertexMap : public VertexMapBase<OID_T, VID_T, PARTITIONER_T> {
   using base_t = VertexMapBase<OID_T, VID_T, PARTITIONER_T>;
   using internal_oid_t = typename InternalOID<OID_T>::type;
