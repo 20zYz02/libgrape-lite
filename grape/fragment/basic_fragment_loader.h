@@ -22,6 +22,7 @@ limitations under the License.
 #include "grape/graph/edge.h"
 #include "grape/graph/vertex.h"
 #include "grape/vertex_map/vertex_map.h"
+#include "mtkahip_interface.h"
 
 namespace grape {
 
@@ -71,12 +72,155 @@ class BasicFragmentLoader : public BasicFragmentLoaderBase<FRAG_T> {
       partitioner = std::unique_ptr<HashPartitioner<oid_t>>(
           new HashPartitioner<oid_t>(fnum));
     } else if (spec_.partitioner_type == PartitionerType::kMapPartitioner) {
+      /* 
       std::vector<oid_t> all_vertices;
       sync_comm::FlatAllGather(vertices_, all_vertices, comm_spec_.comm());
       DistinctSort(all_vertices);
 
       partitioner = std::unique_ptr<MapPartitioner<oid_t>>(
           new MapPartitioner<oid_t>(fnum, all_vertices));
+          */
+
+      /*读划分文件
+      std::vector<std::vector<oid_t>> oid_lists(fnum);
+      std::string partition_file = "custom_partition.txt";
+      VLOG(1) << "Worker " << comm_spec_.worker_id() << " loading custom partition from " << partition_file;
+      std::ifstream fin(partition_file);
+      if (!fin.is_open()) {
+          LOG(FATAL) << "Worker " << comm_spec_.worker_id() 
+               << " cannot open custom partition file: " << partition_file;
+              }
+          oid_t oid;
+      fid_t target_fid;
+      while (fin >> oid >> target_fid) {
+        oid_lists[target_fid].push_back(oid);
+      }
+      fin.close();
+      partitioner = std::unique_ptr<MapPartitioner<oid_t>>(
+      new MapPartitioner<oid_t>(oid_lists));*/
+
+      std::vector<std::vector<oid_t>> oid_lists(fnum);
+      std::string csr_file = "csr.bin";
+      VLOG(1) << "Worker " << comm_spec_.worker_id() 
+              << " loading prebuilt CSR from " << csr_file;
+
+      std::ifstream fin(csr_file, std::ios::binary);
+      if (!fin) {
+          LOG(FATAL) << "Worker " << comm_spec_.worker_id() 
+                     << " cannot open prebuilt CSR file: " << csr_file;
+      }
+
+      int n, edge_count;
+      fin.read(reinterpret_cast<char*>(&n), sizeof(int));
+      fin.read(reinterpret_cast<char*>(&edge_count), sizeof(int));
+
+      std::vector<int> xadj(n + 1);
+      fin.read(reinterpret_cast<char*>(xadj.data()), (n + 1) * sizeof(int));
+
+      std::vector<int> adjncy(edge_count);
+      fin.read(reinterpret_cast<char*>(adjncy.data()), edge_count * sizeof(int));
+
+      fin.close();
+
+      // 分区结果数组（所有 worker 共享）
+      std::vector<int> part(n);
+int k=fnum;
+      // 只在 coordinator (worker 0) 调用 mtkahip
+      if (comm_spec_.worker_id() == 0) {
+          int k = fnum;
+          double imbalance = 1.03;
+          bool suppress_output = true;
+          int seed = 42;
+          int mode = FASTSOCIALMULTITRY_PARALLEL;
+          uint32_t num_threads = fnum;
+
+          int edgecut = 0;
+
+          VLOG(1) << "Coordinator (worker 0) calling mtkahip...";
+          mtkahip(&n, nullptr, xadj.data(), nullptr, adjncy.data(),
+                  &k, &imbalance, suppress_output, seed, mode, num_threads,
+                  &edgecut, part.data());
+
+          VLOG(1) << "Coordinator KaHIP partition done. Edge cut = " << edgecut;
+      }
+
+      // 广播 part 数组给所有 worker（确保所有 worker 使用相同的分区结果）
+      sync_comm::Bcast(part, 0, comm_spec_.comm());
+
+      VLOG(1) << "Worker " << comm_spec_.worker_id() 
+              << " received broadcasted part array from coordinator";
+
+      std::string v_file = "v.txt";
+      VLOG(1) << "Worker " << comm_spec_.worker_id() 
+              << " loading vertex ids from " << v_file;
+
+      std::ifstream v_fin(v_file);
+      if (!v_fin.is_open()) {
+          LOG(FATAL) << "Worker " << comm_spec_.worker_id() 
+                     << " cannot open vertex id file: " << v_file;
+      }
+
+      std::vector<oid_t> vertex_ids;
+      vertex_ids.reserve(n);
+
+      oid_t oid;
+      while (v_fin >> oid) {
+          vertex_ids.push_back(oid);
+      }
+      v_fin.close();
+
+      if (vertex_ids.size() != static_cast<size_t>(n)) {
+          LOG(FATAL) << "Vertex count mismatch: expected " << n 
+                     << ", got " << vertex_ids.size();
+      }
+
+      // ======================================
+      // 根据广播后的 part 分配到 oid_lists
+      // ======================================
+      for (int internal_id = 0; internal_id < n; ++internal_id) {
+          fid_t target_fid = static_cast<fid_t>(part[internal_id]);
+          if (target_fid >= fnum) {
+              LOG(WARNING) << "Invalid fid " << target_fid 
+                           << " for internal_id " << internal_id
+                           << ", clipped to 0";
+              target_fid = 0;
+          }
+
+          // 直接使用预存的原始 oid
+          oid_lists[target_fid].push_back(vertex_ids[internal_id]);
+      }
+
+      // ======================================
+      // 输出验证信息（只在主 worker 输出）
+      // ======================================
+      if (comm_spec_.worker_id() == 0) {
+          std::cout << "\n==================================================" << std::endl;
+          std::cout << "KaHIP 分区结果（共 " << fnum << " 个分区）" << std::endl;
+          std::cout << "==================================================" << std::endl;
+
+          // 按分区分组，存储每个分区的顶点
+          std::vector<std::vector<oid_t>> partition_nodes(fnum);
+          for (int internal_id = 0; internal_id < n; ++internal_id) {
+              int p = part[internal_id];
+              if (p >= 0 && p < k) {
+                  partition_nodes[p].push_back(vertex_ids[internal_id]);
+              }
+          }
+
+          // 输出每个分区的顶点
+          for (int p = 0; p < k; ++p) {
+              std::cout << "分区 " << p << "（共 " << partition_nodes[p].size() << " 个顶点）：";
+              for (oid_t oid : partition_nodes[p]) {
+                  std::cout << " " << oid;
+              }
+              std::cout << std::endl;
+          }
+          std::cout << "==================================================\n" << std::endl;
+      }
+
+      partitioner = std::unique_ptr<MapPartitioner<oid_t>>(
+          new MapPartitioner<oid_t>(oid_lists));
+
     } else if (spec_.partitioner_type ==
                PartitionerType::kSegmentedPartitioner) {
       std::vector<oid_t> all_vertices;

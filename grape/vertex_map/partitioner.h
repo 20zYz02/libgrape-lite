@@ -110,6 +110,9 @@ class MapPartitioner : public IPartitioner<OID_T> {
     fnum_ = fnum;
     Init(fnum, oid_list);
   }
+  MapPartitioner(const std::vector<std::vector<OID_T>>& oid_lists) {
+      Init(oid_lists);
+    }
   ~MapPartitioner() = default;
 
   void Init(fid_t fnum, const std::vector<OID_T>& oid_list) {

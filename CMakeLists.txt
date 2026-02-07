@@ -48,6 +48,8 @@ if (WCC_USE_GID)
   add_definitions(-DWCC_USE_GID)
 endif ()
 
+include_directories(/home/zhouyuze/kahip/interface)
+
 include_directories(SYSTEM thirdparty)
 
 # ------------------------------------------------------------------------------
@@ -244,6 +246,25 @@ else ()
   set_target_properties(analytical_apps PROPERTIES OUTPUT_NAME run_app)
   target_link_libraries(analytical_apps grape-lite ${MPI_CXX_LIBRARIES}
                         ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
+  target_include_directories(analytical_apps PRIVATE
+    /home/zhouyuze/kahip/interface
+)
+
+target_link_libraries(analytical_apps
+    /home/zhouyuze/kahip/build/libinterfacemtkahip.so     # 接口库（必须）
+    # 如果上面一行报错，再加上下面这行（核心库）
+    /home/zhouyuze/kahip/deploy/libmtkahip.so
+    
+    tbb           # KaHIP 必须的依赖
+    pthread       # 线程支持
+)
+
+# 强烈推荐：设置 rpath，让可执行文件记住库路径，运行时不用 export LD_LIBRARY_PATH
+set_target_properties(analytical_apps PROPERTIES
+    INSTALL_RPATH "/home/zhouyuze/kahip/build;/home/zhouyuze/kahip/deploy"
+    BUILD_WITH_INSTALL_RPATH TRUE
+)
+
   install_without_export_libgrapelite_target(analytical_apps)
 
   file(GLOB TEST_FILES RELATIVE "${PROJECT_SOURCE_DIR}/tests" "${PROJECT_SOURCE_DIR}/tests/*.cc")
