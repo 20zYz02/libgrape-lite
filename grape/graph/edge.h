@@ -34,25 +34,18 @@ class OutArchive;
  */
 template <typename VID_T, typename EDATA_T>
 struct Edge {
-  DEV_HOST Edge() : src(), dst(), edata(), secret(false) {}
+  DEV_HOST Edge() : src(), dst(), edata() {}
   DEV_HOST ~Edge() {}
 
   DEV_HOST Edge(const VID_T& src, const VID_T& dst)
-      : src(src), dst(dst), edata(), secret(false) {}
+      : src(src), dst(dst), edata() {}
   DEV_HOST Edge(const VID_T& src, const VID_T& dst, const EDATA_T& edata)
-      : src(src), dst(dst), edata(edata), secret(false) {}
+      : src(src), dst(dst), edata(edata) {}
+  DEV_HOST Edge(const Edge& e) : src(e.src), dst(e.dst), edata(e.edata) {}
   DEV_HOST Edge(const VID_T& src, const VID_T& dst, EDATA_T&& edata)
-      : src(src), dst(dst), edata(std::move(edata)), secret(false) {}
-
-  DEV_HOST Edge(const VID_T& src, const VID_T& dst, const EDATA_T& edata, const bool secret)
-      : src(src), dst(dst), edata(edata), secret(secret) {}
-  DEV_HOST Edge(const VID_T& src, const VID_T& dst, EDATA_T&& edata, const bool secret)
-      : src(src), dst(dst), edata(std::move(edata)), secret(secret) {}
-  
-  DEV_HOST Edge(const Edge& e) 
-      : src(e.src), dst(e.dst), edata(e.edata), secret(e.secret) {}
+      : src(src), dst(dst), edata(std::move(edata)) {}
   DEV_HOST Edge(Edge&& e) noexcept
-      : src(e.src), dst(e.dst), edata(std::move(e.edata)), secret(e.secret) {}
+      : src(e.src), dst(e.dst), edata(std::move(e.edata)) {}
 
   DEV_HOST Edge& operator=(const Edge& other) {
     if (this == &other) {
@@ -61,7 +54,6 @@ struct Edge {
     src = other.src;
     dst = other.dst;
     edata = other.edata;
-    secret = other.secret;
     return *this;
   }
 
@@ -72,7 +64,6 @@ struct Edge {
     src = other.src;
     dst = other.dst;
     edata = std::move(other.edata);
-    secret = other.secret;
     return *this;
   }
 
@@ -87,7 +78,6 @@ struct Edge {
   VID_T src;
   VID_T dst;
   EDATA_T edata;
-  bool secret;
 };
 
 /**
@@ -97,16 +87,11 @@ struct Edge {
  */
 template <typename VID_T>
 struct Edge<VID_T, EmptyType> {
-  DEV_HOST Edge() : src(), dst(), secret(false) {}
-  DEV_HOST Edge(const VID_T& src, const VID_T& dst) 
-      : src(src), dst(dst), secret(false) {}
+  DEV_HOST Edge() : src(), dst() {}
+  DEV_HOST Edge(const VID_T& src, const VID_T& dst) : src(src), dst(dst) {}
   DEV_HOST Edge(const VID_T& src, const VID_T& dst, const EmptyType& edata)
-      : src(src), dst(dst), secret(false) {}
-  DEV_HOST Edge(const VID_T& src, const VID_T& dst, bool secret) 
-      : src(src), dst(dst), secret(secret) {}
-  DEV_HOST Edge(const VID_T& src, const VID_T& dst, const EmptyType& edata, bool secret)
-      : src(src), dst(dst), secret(secret) {}
-  DEV_HOST Edge(const Edge& e) : src(e.src), dst(e.dst), secret(e.secret) {}
+      : src(src), dst(dst) {}
+  DEV_HOST Edge(const Edge& e) : src(e.src), dst(e.dst) {}
   DEV_HOST ~Edge() {}
 
   DEV_HOST Edge& operator=(const Edge& other) {
@@ -115,7 +100,6 @@ struct Edge<VID_T, EmptyType> {
     }
     src = other.src;
     dst = other.dst;
-    secret = other.secret;
     return *this;
   }
 
@@ -132,7 +116,6 @@ struct Edge<VID_T, EmptyType> {
     VID_T dst;
     EmptyType edata;
   };
-  bool secret;
 };
 
 template <typename VID_T, typename EDATA_T>

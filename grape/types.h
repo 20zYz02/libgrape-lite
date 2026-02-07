@@ -20,6 +20,8 @@ limitations under the License.
 #include <ostream>
 #include <type_traits>
 
+#include "pthash/utils/hasher.hpp"
+
 // Use the same setting with apache-arrow to avoid possible conflicts
 #define nssv_CONFIG_SELECT_STRING_VIEW nssv_STRING_VIEW_NONSTD
 #include "string_view/string_view.hpp"
@@ -55,6 +57,22 @@ to_enum(T value) noexcept {
   return static_cast<E>(value);
 }
 
+enum class FragmentType {
+  kEdgeCut = 0,
+  kVertexCut = 1,
+};
+
+template <typename FRAG_T>
+struct is_vertex_cut_fragment {
+  static constexpr bool value =
+      FRAG_T::fragment_type == FragmentType::kVertexCut;
+};
+
+template <typename FRAG_T>
+struct is_edge_cut_fragment {
+  static constexpr bool value = FRAG_T::fragment_type == FragmentType::kEdgeCut;
+};
+
 /**
  * @brief LoadStrategy specifies the which edges should be loadded when building
  * the graph from a location.
@@ -82,6 +100,7 @@ enum class MessageStrategy {
   kAlongIncomingEdgeToOuterVertex = 1,  /// from c to a;
   kAlongEdgeToOuterVertex = 2,          /// from a to b, a to c;
   kSyncOnOuterVertex = 3,               /// from b' to b and c' to c;
+  kGatherScatter = 4,  /// gather from b' to b and scatter from c' to c;
 };
 
 template <typename APP_T, typename GRAPH_T>
@@ -93,7 +112,8 @@ constexpr inline bool check_load_strategy_compatible() {
            (GRAPH_T::load_strategy == LoadStrategy::kOnlyIn))) ||
          ((APP_T::load_strategy == LoadStrategy::kOnlyOut) &&
           ((GRAPH_T::load_strategy == LoadStrategy::kBothOutIn) ||
-           (GRAPH_T::load_strategy == LoadStrategy::kOnlyOut)));
+           (GRAPH_T::load_strategy == LoadStrategy::kOnlyOut))) ||
+         (GRAPH_T::fragment_type == FragmentType::kVertexCut);
 }
 
 template <typename APP_T, typename GRAPH_T>
@@ -109,7 +129,9 @@ constexpr inline bool check_message_strategy_valid() {
            MessageStrategy::kAlongOutgoingEdgeToOuterVertex) &&
           ((GRAPH_T::load_strategy == LoadStrategy::kOnlyOut) ||
            (GRAPH_T::load_strategy == LoadStrategy::kBothOutIn))) ||
-         (APP_T::message_strategy == MessageStrategy::kSyncOnOuterVertex);
+         (APP_T::message_strategy == MessageStrategy::kSyncOnOuterVertex) ||
+         ((APP_T::message_strategy == MessageStrategy::kGatherScatter) &&
+          (GRAPH_T::fragment_type == FragmentType::kVertexCut));
 }
 
 template <typename APP_T, typename GRAPH_T>
@@ -137,6 +159,39 @@ struct InternalOID<std::string> {
 
   static std::string FromInternal(const type& val) { return std::string(val); }
 };
+
+struct murmurhasher {
+  typedef pthash::hash64 hash_type;
+
+  // specialization for std::string
+  static inline hash_type hash(std::string const& val, uint64_t seed) {
+    return pthash::MurmurHash2_64(val.data(), val.size(), seed);
+  }
+
+  // specialization for uint64_t
+  static inline hash_type hash(uint64_t val, uint64_t seed) {
+    return pthash::MurmurHash2_64(reinterpret_cast<char const*>(&val),
+                                  sizeof(val), seed);
+  }
+
+  static inline hash_type hash(const nonstd::string_view& val, uint64_t seed) {
+    return pthash::MurmurHash2_64(val.data(), val.size(), seed);
+  }
+
+#if __cplusplus >= 201703L
+  static inline hash_type hash(std::string_view const& val, uint64_t seed) {
+    return pthash::MurmurHash2_64(val.data(), val.size(), seed);
+  }
+#endif
+};
+
+#ifdef __cpp_lib_is_invocable
+template <class T, typename... Args>
+using result_of_t = std::invoke_result_t<T, Args...>;
+#else
+template <class T, typename... Args>
+using result_of_t = typename std::result_of<T(Args...)>::type;
+#endif
 
 }  // namespace grape
 

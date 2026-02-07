@@ -105,6 +105,12 @@ struct ShuffleBufferTuple : public ShuffleBufferTuple<Rest...> {
                      typename ShuffleBuffer<Rest>::type&&... bx)
       : first(std::move(b0)), ShuffleBufferTuple<Rest...>(std::move(bx)...) {}
 
+  ShuffleBufferTuple& operator=(ShuffleBufferTuple&& rhs) {
+    *static_cast<ShuffleBufferTuple<Rest...>*>(this) = std::move(rhs);
+    first = std::move(rhs.first);
+    return *this;
+  }
+
   static constexpr size_t tuple_size =
       ShuffleBufferTuple<Rest...>::tuple_size + 1;
 
@@ -178,6 +184,11 @@ struct ShuffleBufferTuple<First> {
       : first(b0) {}
   explicit ShuffleBufferTuple(typename ShuffleBuffer<First>::type&& b0)
       : first(std::move(b0)) {}
+
+  ShuffleBufferTuple& operator=(ShuffleBufferTuple&& rhs) {
+    first = std::move(rhs.first);
+    return *this;
+  }
 
   static constexpr size_t tuple_size = 1;
 
@@ -307,6 +318,14 @@ void foreach_helper(const Tuple& t, const Func& func,
 }
 
 template <typename Tuple, typename Func, std::size_t... index>
+void range_foreach_helper(const Tuple& t, size_t begin, size_t end,
+                          const Func& func, index_sequence<index...>) {
+  for (size_t i = begin; i < end; ++i) {
+    func(get_const_buffer<index>(t)[i]...);
+  }
+}
+
+template <typename Tuple, typename Func, std::size_t... index>
 void foreach_rval_helper(Tuple& t, const Func& func, index_sequence<index...>) {
   size_t size = t.size();
   for (size_t i = 0; i < size; ++i) {
@@ -314,9 +333,23 @@ void foreach_rval_helper(Tuple& t, const Func& func, index_sequence<index...>) {
   }
 }
 
+template <typename Tuple, typename Func, std::size_t... index>
+void range_foreach_rval_helper(Tuple& t, size_t begin, size_t end,
+                               const Func& func, index_sequence<index...>) {
+  for (size_t i = begin; i < end; ++i) {
+    func(std::move(get_buffer<index>(t)[i])...);
+  }
+}
+
 template <typename Tuple, typename Func>
 void foreach(Tuple& t, const Func& func) {
   foreach_helper(t, func, make_index_sequence<Tuple::tuple_size>{});
+}
+
+template <typename Tuple, typename Func>
+void range_foreach_rval(Tuple& t, size_t begin, size_t end, const Func& func) {
+  range_foreach_rval_helper(t, begin, end, func,
+                            make_index_sequence<Tuple::tuple_size>{});
 }
 
 template <typename Tuple, typename Func>

@@ -4,7 +4,7 @@ project(libgrape-lite C CXX)
 
 set(LIBGRAPELITE_MAJOR_VERSION 0)
 set(LIBGRAPELITE_MINOR_VERSION 3)
-set(LIBGRAPELITE_PATCH_VERSION 4)
+set(LIBGRAPELITE_PATCH_VERSION 5)
 set(LIBGRAPELITE_VERSION ${LIBGRAPELITE_MAJOR_VERSION}.${LIBGRAPELITE_MINOR_VERSION}.${LIBGRAPELITE_PATCH_VERSION})
 
 # ------------------------------------------------------------------------------
@@ -14,6 +14,7 @@ option(USE_JEMALLOC "Whether to use jemalloc." OFF)
 option(USE_HUGEPAGES "Whether to use hugepages." OFF)
 option(BUILD_SHARED_LIBS "Whether to build libgrape-lite as shared library" ON)
 option(PROFILING "Whether to enable profiling" OFF)
+option(TRACKING_MEMORY "Whether to enable memory tracking" OFF)
 option(WITH_ASAN "Build with Address Sanitizer" OFF)
 option(BUILD_LIBGRAPELITE_DOCS "Build libgrape-lite documentation" ON)
 option(BUILD_LIBGRAPELITE_TESTS "Build libgrape-lite test cases" ON)
@@ -36,6 +37,11 @@ endif ()
 if (PROFILING)
   message(STATUS "Enable profiling")
   add_definitions(-DPROFILING)
+endif ()
+
+if (TRACKING_MEMORY)
+  message(STATUS "Enable memory tracking")
+  add_definitions(-DTRACKING_MEMORY)
 endif ()
 
 if (WCC_USE_GID)
@@ -79,10 +85,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall")
 if (APPLE)
   set(CMAKE_MACOSX_RPATH ON)
 else ()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror -Wl,-rpath,$ORIGIN")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Werror -Wl,-rpath,$ORIGIN -march=native")
 endif ()
 if (USE_SIMD)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -march=native")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
 endif ()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -fprofile-arcs -ftest-coverage")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -g")
@@ -153,17 +159,8 @@ endif ()
 # ------------------------------------------------------------------------------
 # find_libraries
 # ------------------------------------------------------------------------------
-# 将库的安装路径添加到CMAKE的库搜索路径
-set(CMAKE_FIND_ROOT_PATH "${CMAKE_FIND_ROOT_PATH};/home/wuyufei/arm64-install")
-
-# # 不知道为什么手动set MPI_HOME就能找到mpi了
-set(MPI_HOME "/home/wuyufei/arm64-install")
 find_package(MPI REQUIRED)
 include_directories(SYSTEM ${MPI_CXX_INCLUDE_PATH})
-
-# 寻找optee_client
-# find optee_client ------------------------------------------------------------
-find_library(TEEC_LIB NAMES teec)
 
 # find Threads------------------------------------------------------------------
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
@@ -246,7 +243,7 @@ else ()
                              examples/analytical_apps)
   set_target_properties(analytical_apps PROPERTIES OUTPUT_NAME run_app)
   target_link_libraries(analytical_apps grape-lite ${MPI_CXX_LIBRARIES}
-                        ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${TEEC_LIB})# 加上teec
+                        ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
   install_without_export_libgrapelite_target(analytical_apps)
 
   file(GLOB TEST_FILES RELATIVE "${PROJECT_SOURCE_DIR}/tests" "${PROJECT_SOURCE_DIR}/tests/*.cc")
@@ -261,7 +258,7 @@ else ()
     endif()
     target_include_directories(${T_NAME} PRIVATE examples/analytical_apps)
     target_link_libraries(${T_NAME} PRIVATE grape-lite ${MPI_CXX_LIBRARIES}
-                          ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${TEEC_LIB})# 加上teec
+                          ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS})
   endforeach()
 
   if (WITH_CUDA)
@@ -285,7 +282,7 @@ else ()
                              examples/gnn_sampler/thirdparty
                              ${RDKAFKA_INCLUDE_DIR})
   target_link_libraries(gnn_sampler grape-lite ${MPI_CXX_LIBRARIES}
-                        ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${RDKAFKA_LIBRARIES} ${TEEC_LIB})# 加上teec
+                        ${GLOG_LIBRARIES} ${GFLAGS_LIBRARIES} ${CMAKE_DL_LIBS} ${RDKAFKA_LIBRARIES})
   install_without_export_libgrapelite_target(gnn_sampler)
 endif ()
 
@@ -301,6 +298,7 @@ endif()
 
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/flat_hash_map
                   ${PROJECT_SOURCE_DIR}/thirdparty/string_view
+                  ${PROJECT_SOURCE_DIR}/thirdparty/pthash
         DESTINATION include
         FILES_MATCHING
         PATTERN "*.h"

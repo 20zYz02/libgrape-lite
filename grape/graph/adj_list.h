@@ -35,50 +35,38 @@ namespace grape {
  */
 template <typename VID_T, typename EDATA_T>
 struct Nbr {
-  DEV_HOST Nbr() : neighbor(), data(), secret(false) {}
-  DEV_HOST explicit Nbr(const VID_T& nbr_) : neighbor(nbr_), data(), secret(false) {}
-  DEV_HOST explicit Nbr(const Vertex<VID_T>& nbr_) : neighbor(nbr_), data(), secret(false) {}
-  DEV_HOST Nbr(const Nbr& rhs) : neighbor(rhs.neighbor), data(rhs.data), secret(rhs.secret) {}
+  DEV_HOST Nbr() : neighbor(), data() {}
+  DEV_HOST explicit Nbr(const VID_T& nbr_) : neighbor(nbr_), data() {}
+  DEV_HOST explicit Nbr(const Vertex<VID_T>& nbr_) : neighbor(nbr_), data() {}
+  DEV_HOST Nbr(const Nbr& rhs) : neighbor(rhs.neighbor), data(rhs.data) {}
   DEV_HOST Nbr(Nbr&& rhs) noexcept
-      : neighbor(rhs.neighbor), data(std::move(rhs.data)), secret(rhs.secret) {}
+      : neighbor(rhs.neighbor), data(std::move(rhs.data)) {}
   DEV_HOST Nbr(const VID_T& nbr_, const EDATA_T& data_)
-      : neighbor(nbr_), data(data_), secret(false) {}
+      : neighbor(nbr_), data(data_) {}
   DEV_HOST Nbr(const Vertex<VID_T>& nbr_, const EDATA_T& data_)
-      : neighbor(nbr_), data(data_), secret(false) {}
+      : neighbor(nbr_), data(data_) {}
   DEV_HOST Nbr(const VID_T& nbr_, EDATA_T&& data_)
-      : neighbor(nbr_), data(std::move(data_)), secret(false) {}
-
-  DEV_HOST Nbr(const VID_T& nbr_, const EDATA_T& data_, const bool& secret)
-      : neighbor(nbr_), data(data_), secret(secret) {}
-  DEV_HOST Nbr(const Vertex<VID_T>& nbr_, const EDATA_T& data_, const bool& secret)
-      : neighbor(nbr_), data(data_), secret(secret) {}
-  DEV_HOST Nbr(const VID_T& nbr_, EDATA_T&& data_, const bool& secret)
-      : neighbor(nbr_), data(std::move(data_)), secret(secret) {}
-
+      : neighbor(nbr_), data(std::move(data_)) {}
   DEV_HOST ~Nbr() {}
 
   DEV_HOST_INLINE Nbr& operator=(const Nbr& rhs) {
     neighbor = rhs.neighbor;
     data = rhs.data;
-    secret = rhs.secret;
     return *this;
   }
   DEV_HOST_INLINE Nbr& operator=(Nbr&& rhs) {
     neighbor = std::move(rhs.neighbor);
     data = std::move(rhs.data);
-    secret = std::move(rhs.secret);
     return *this;
   }
 
   DEV_HOST_INLINE Vertex<VID_T> get_neighbor() const { return neighbor; }
   DEV_HOST_INLINE const EDATA_T& get_data() const { return data; }
-  DEV_HOST_INLINE bool get_secret() const { return secret; }
 
   DEV_HOST_INLINE VID_T get_neighbor_lid() const { return neighbor.GetValue(); }
 
   Vertex<VID_T> neighbor;
   EDATA_T data;
-  bool secret;
 };
 
 template <typename VID_T, typename EDATA_T>
@@ -94,16 +82,12 @@ bool operator<(const Nbr<VID_T, EDATA_T>& lhs, const Nbr<VID_T, EDATA_T>& rhs) {
  */
 template <typename VID_T>
 struct Nbr<VID_T, EmptyType> {
-  DEV_HOST Nbr() : neighbor(), secret(false) {}
-  DEV_HOST explicit Nbr(const VID_T& nbr_) : neighbor(nbr_), secret(false) {}
-  DEV_HOST explicit Nbr(const Vertex<VID_T>& nbr_) : neighbor(nbr_), secret(false) {}
-  DEV_HOST Nbr(const Nbr& rhs) : neighbor(rhs.neighbor), secret(false) {}
-  DEV_HOST Nbr(const VID_T& nbr_, const EmptyType&) : neighbor(nbr_), secret(false) {}
-  DEV_HOST Nbr(const Vertex<VID_T>& nbr_, const EmptyType&) : neighbor(nbr_), secret(false) {}
-  DEV_HOST Nbr(const VID_T& nbr_, const EmptyType&, const bool& secret) 
-                        : neighbor(nbr_), secret(secret) {}
-  DEV_HOST Nbr(const Vertex<VID_T>& nbr_, const EmptyType&, const bool& secret) 
-                        : neighbor(nbr_), secret(secret) {}
+  DEV_HOST Nbr() : neighbor() {}
+  DEV_HOST explicit Nbr(const VID_T& nbr_) : neighbor(nbr_) {}
+  DEV_HOST explicit Nbr(const Vertex<VID_T>& nbr_) : neighbor(nbr_) {}
+  DEV_HOST Nbr(const Nbr& rhs) : neighbor(rhs.neighbor) {}
+  DEV_HOST Nbr(const VID_T& nbr_, const EmptyType&) : neighbor(nbr_) {}
+  DEV_HOST Nbr(const Vertex<VID_T>& nbr_, const EmptyType&) : neighbor(nbr_) {}
   DEV_HOST ~Nbr() {}
 
   DEV_HOST_INLINE Nbr& operator=(const Nbr& rhs) {
@@ -113,7 +97,6 @@ struct Nbr<VID_T, EmptyType> {
 
   DEV_HOST_INLINE Vertex<VID_T> get_neighbor() const { return neighbor; }
   DEV_HOST_INLINE const EmptyType& get_data() const { return data; }
-  DEV_HOST_INLINE bool get_secret() const { return secret; }
 
   DEV_HOST_INLINE VID_T get_neighbor_lid() const { return neighbor.GetValue(); }
 
@@ -121,7 +104,6 @@ struct Nbr<VID_T, EmptyType> {
     Vertex<VID_T> neighbor;
     EmptyType data;
   };
-  bool secret;
 };
 
 template <typename VID_T, typename EDATA_T>

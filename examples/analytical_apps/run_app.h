@@ -33,17 +33,21 @@ limitations under the License.
 #include <grape/fragment/loader.h>
 #include <grape/grape.h>
 #include <grape/util.h>
-#include <grape/vertex_map/global_vertex_map.h>
 
 #ifdef GRANULA
 #include "thirdparty/atlarge-research-granula/granula.hpp"
 #endif
 
+#include "bc/staged_bc.h"
+#include "bc/staged_bc_bfs.h"
 #include "bfs/bfs.h"
 #include "bfs/bfs_auto.h"
 #include "cdlp/cdlp.h"
 #include "cdlp/cdlp_auto.h"
+#include "core_decomposition/core_decomposition.h"
 #include "flags.h"
+#include "kclique/kclique.h"
+#include "kcore/kcore.h"
 #include "lcc/lcc.h"
 #include "lcc/lcc_auto.h"
 #include "pagerank/pagerank.h"
@@ -55,67 +59,42 @@ limitations under the License.
 #include "sssp/sssp.h"
 #include "sssp/sssp_auto.h"
 #include "timer.h"
+#include "utils.h"
 #include "wcc/wcc.h"
 #include "wcc/wcc_auto.h"
-#include "drug_recommendation/drug_recommendation.h"
-#include "cdlp/cdlp_selective.h"
-
-#ifndef __AFFINITY__
-#define __AFFINITY__ false
-#endif
 
 namespace grape {
 
-void Init() {
-  if (FLAGS_deserialize && FLAGS_serialization_prefix.empty()) {
-    LOG(FATAL) << "Please assign a serialization prefix.";
-  } else if (FLAGS_efile.empty()) {
-    LOG(FATAL) << "Please assign input edge files.";
-  } else if (FLAGS_vfile.empty() && FLAGS_segmented_partition) {
-    LOG(FATAL) << "EFragmentLoader dosen't support Segmented Partitioner. "
-                  "Please assign vertex files or use Hash Partitioner";
-  }
-
-  if (!FLAGS_out_prefix.empty() && access(FLAGS_out_prefix.c_str(), 0) != 0) {
-    mkdir(FLAGS_out_prefix.c_str(), 0777);
-  }
-
-  InitMPIComm();
-  CommSpec comm_spec;
-  comm_spec.Init(MPI_COMM_WORLD);
-  if (comm_spec.worker_id() == kCoordinatorRank) {
-    VLOG(1) << "Workers of libgrape-lite initialized.";
-  }
-}
-
-void Finalize() {
-  FinalizeMPIComm();
-  VLOG(1) << "Workers finalized.";
-}
-
-template <typename FRAG_T, typename APP_T, typename... Args>
-void DoQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP_T> app,
-             const CommSpec& comm_spec, const ParallelEngineSpec& spec,
-             const std::string& out_prefix, Args... args) {
+template <typename FRAG_T, typename APP1_T, typename APP2_T, typename... Args>
+void DoDualQuery(std::shared_ptr<FRAG_T> fragment, std::shared_ptr<APP1_T> app1,
+                 std::shared_ptr<APP2_T> app2, const CommSpec& comm_spec,
+                 const ParallelEngineSpec& spec, const std::string& out_prefix,
+                 Args... args) {
   timer_next("load application");
-  auto worker = APP_T::CreateWorker(app, fragment);
-  worker->Init(comm_spec, spec);
+  auto worker1 = APP1_T::CreateWorker(app1, fragment);
+  worker1->Init(comm_spec, spec);
+  auto worker2 = std::make_shared<typename APP2_T::worker_t>(
+      app2, fragment, worker1->GetContext());
+  worker2->Init(comm_spec, spec);
   MPI_Barrier(comm_spec.comm());
   timer_next("run algorithm");
-  worker->Query(std::forward<Args>(args)...);
+  worker1->Query(std::forward<Args>(args)...);
+  worker2->Query(std::forward<Args>(args)...);
   timer_next("print output");
   if (!out_prefix.empty()) {
     std::ofstream ostream;
     std::string output_path =
         grape::GetResultFilename(out_prefix, fragment->fid());
     ostream.open(output_path);
-    worker->Output(ostream);
+    worker2->Output(ostream);
+    worker1->Finalize();
+    worker2->Finalize();
     ostream.close();
-    worker->Finalize();
     VLOG(1) << "Worker-" << comm_spec.worker_id()
             << " finished: " << output_path;
   } else {
-    worker->Finalize();
+    worker1->Finalize();
+    worker2->Finalize();
     VLOG(1) << "Worker-" << comm_spec.worker_id() << " finished without output";
   }
   timer_end();
@@ -130,45 +109,59 @@ void CreateAndQuery(const CommSpec& comm_spec, const std::string& out_prefix,
   LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
   graph_spec.set_directed(FLAGS_directed);
   graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
-  graph_spec.set_secret(FLAGS_secret);
+  graph_spec.load_concurrency = FLAGS_load_concurrency;
   if (FLAGS_deserialize) {
     graph_spec.set_deserialize(true, FLAGS_serialization_prefix);
   } else if (FLAGS_serialize) {
     graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
-  if (FLAGS_secret) {
-    using VertexMapType =
-        GlobalVertexMap<OID_T, VID_T, PrivacyPartitioner<OID_T>>;
-    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                            load_strategy, VertexMapType>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    using AppType = APP_T<FRAG_T>;
-    auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
-  } else if (FLAGS_segmented_partition) {
-    using VertexMapType =
-        GlobalVertexMap<OID_T, VID_T, SegmentedPartitioner<OID_T>>;
-    using FRAG_T = ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T,
-                                            load_strategy, VertexMapType>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    using AppType = APP_T<FRAG_T>;
-    auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
-  } else {
-    graph_spec.set_rebalance(false, 0);
-    using FRAG_T =
-        ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
-    std::shared_ptr<FRAG_T> fragment =
-        LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
-    using AppType = APP_T<FRAG_T>;
-    auto app = std::make_shared<AppType>();
-    DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec,
-                                      out_prefix, args...);
+
+  graph_spec.partitioner_type =
+      grape::parse_partitioner_type_name(FLAGS_partitioner_type);
+  graph_spec.idxer_type = grape::parse_idxer_type_name(FLAGS_idxer_type);
+
+  using FRAG_T =
+      ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
+  std::shared_ptr<FRAG_T> fragment =
+      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+  using AppType = APP_T<FRAG_T>;
+  auto app = std::make_shared<AppType>();
+  DoQuery<FRAG_T, AppType, Args...>(fragment, app, comm_spec, spec, out_prefix,
+                                    args...);
+}
+
+template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T,
+          LoadStrategy load_strategy, template <class> class APP1_T,
+          template <class> class APP2_T, typename... Args>
+void CreateAndQueryStagedApp(const CommSpec& comm_spec,
+                             const std::string& out_prefix, int fnum,
+                             const ParallelEngineSpec& spec, Args... args) {
+  timer_next("load graph");
+  LoadGraphSpec graph_spec = DefaultLoadGraphSpec();
+  graph_spec.set_directed(FLAGS_directed);
+  graph_spec.set_rebalance(FLAGS_rebalance, FLAGS_rebalance_vertex_factor);
+  graph_spec.load_concurrency = FLAGS_load_concurrency;
+  if (FLAGS_deserialize) {
+    graph_spec.set_deserialize(true, FLAGS_serialization_prefix);
+  } else if (FLAGS_serialize) {
+    graph_spec.set_serialize(true, FLAGS_serialization_prefix);
   }
+
+  graph_spec.partitioner_type =
+      grape::parse_partitioner_type_name(FLAGS_partitioner_type);
+  graph_spec.idxer_type = grape::parse_idxer_type_name(FLAGS_idxer_type);
+
+  using FRAG_T =
+      ImmutableEdgecutFragment<OID_T, VID_T, VDATA_T, EDATA_T, load_strategy>;
+  std::shared_ptr<FRAG_T> fragment =
+      LoadGraph<FRAG_T>(FLAGS_efile, FLAGS_vfile, comm_spec, graph_spec);
+
+  using App1Type = APP1_T<FRAG_T>;
+  auto app1 = std::make_shared<App1Type>();
+  using App2Type = APP2_T<FRAG_T>;
+  auto app2 = std::make_shared<App2Type>();
+  DoDualQuery<FRAG_T, App1Type, App2Type, Args...>(
+      fragment, app1, app2, comm_spec, spec, out_prefix, args...);
 }
 
 template <typename OID_T, typename VID_T, typename VDATA_T, typename EDATA_T>
@@ -284,13 +277,22 @@ void Run() {
       CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
                      LCC>(comm_spec, out_prefix, fnum, spec,
                           FLAGS_degree_threshold);
-    } else if (name == "drug_recommendation") {//DrugRecommendation
-      CreateAndQuery<OID_T, VID_T, std::string, int, LoadStrategy::kOnlyOut,//VDATA_T无法通过run_app.cc传进来，必须这里手写，grape的bug，sssp的EDATA_T也是这样
-                     DrugRecommendation>(comm_spec, out_prefix, fnum, spec, FLAGS_drug_patient);
-    } else if (name == "cdlp_selective"){
-      CreateAndQuery<OID_T, VID_T, int, EmptyType, LoadStrategy::kOnlyOut,//VDATA_T无法通过run_app.cc传进来，必须这里手写，grape的bug，sssp的EDATA_T也是这样
-                     CDLPSelective, int>(comm_spec, out_prefix, fnum, spec,
-                                FLAGS_cdlp_mr);
+    } else if (name == "bc") {
+      CreateAndQueryStagedApp<OID_T, VID_T, VDATA_T, EmptyType,
+                              LoadStrategy::kOnlyOut, StagedBCBFS, StagedBC,
+                              OID_T>(comm_spec, out_prefix, fnum, spec,
+                                     FLAGS_bc_source);
+    } else if (name == "kcore") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     KCore, int>(comm_spec, out_prefix, fnum, spec,
+                                 FLAGS_kcore_k);
+    } else if (name == "kclique") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     KClique, int>(comm_spec, out_prefix, fnum, spec,
+                                   FLAGS_kclique_k);
+    } else if (name == "core_decomposition") {
+      CreateAndQuery<OID_T, VID_T, VDATA_T, EmptyType, LoadStrategy::kOnlyOut,
+                     CoreDecomposition>(comm_spec, out_prefix, fnum, spec);
     } else {
       LOG(FATAL) << "No avaiable application named [" << name << "].";
     }

@@ -19,7 +19,6 @@ limitations under the License.
 #include <gflags/gflags_declare.h>
 
 DECLARE_bool(directed);
-DECLARE_bool(secret);
 DECLARE_string(application);
 DECLARE_string(efile);
 DECLARE_string(vfile);
@@ -34,13 +33,16 @@ DECLARE_int64(sssp_source);
 DECLARE_double(pr_d);
 DECLARE_int32(pr_mr);
 DECLARE_int32(cdlp_mr);
-DECLARE_int64(drug_patient);
+DECLARE_int64(bc_source);
+DECLARE_int32(kcore_k);
+DECLARE_int32(kclique_k);
 
 DECLARE_int32(degree_threshold);
 
 DECLARE_bool(opt);
+DECLARE_string(partitioner_type);
+DECLARE_string(idxer_type);
 
-DECLARE_bool(segmented_partition);
 DECLARE_bool(rebalance);
 DECLARE_int32(rebalance_vertex_factor);
 
@@ -49,6 +51,10 @@ DECLARE_bool(deserialize);
 DECLARE_string(serialization_prefix);
 
 DECLARE_int32(app_concurrency);
+DECLARE_int32(load_concurrency);
+
+DECLARE_bool(vc);
+DECLARE_bool(single_scan_load);
 
 DECLARE_string(lb);
 #endif  // EXAMPLES_ANALYTICAL_APPS_FLAGS_H_

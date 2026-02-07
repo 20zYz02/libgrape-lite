@@ -29,6 +29,7 @@ limitations under the License.
 #include "grape/config.h"
 #include "grape/parallel/auto_parallel_message_manager.h"
 #include "grape/parallel/batch_shuffle_message_manager.h"
+#include "grape/parallel/gather_scatter_message_manager.h"
 #include "grape/parallel/parallel_engine.h"
 #include "grape/parallel/parallel_message_manager.h"
 #include "grape/parallel/parallel_message_manager_opt.h"
@@ -65,17 +66,31 @@ class Worker {
         std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
   }
 
+  Worker(std::shared_ptr<APP_T> app, std::shared_ptr<fragment_t> graph,
+         std::shared_ptr<context_t> context)
+      : app_(app), context_(context), fragment_(graph) {
+    prepare_conf_.message_strategy = APP_T::message_strategy;
+    prepare_conf_.need_split_edges = APP_T::need_split_edges;
+    prepare_conf_.need_split_edges_by_fragment =
+        APP_T::need_split_edges_by_fragment;
+    prepare_conf_.need_mirror_info =
+        std::is_same<message_manager_t, BatchShuffleMessageManager>::value;
+  }
+
   ~Worker() = default;
 
   void Init(const CommSpec& comm_spec,
             const ParallelEngineSpec& pe_spec = DefaultParallelEngineSpec()) {
     auto& graph = *fragment_;
+    pe_spec_ = pe_spec;
     // prepare for the query
-    graph.PrepareToRunApp(comm_spec, prepare_conf_);
+    graph.PrepareToRunApp(comm_spec, prepare_conf_, pe_spec_);
 
     comm_spec_ = comm_spec;
     MPI_Barrier(comm_spec_.comm());
-    context_ = std::make_shared<context_t>(graph);
+    if (context_ == nullptr) {
+      context_ = std::make_shared<context_t>(graph);
+    }
 
     initPool(pe_spec);
     messages_.Init(comm_spec_.comm());
@@ -92,8 +107,6 @@ class Worker {
 
     context_->Init(messages_, std::forward<Args>(args)...);
     processMutation();
-
-    int round = 0;
 
     messages_.Start();
 
@@ -113,7 +126,6 @@ class Worker {
 
     while (!messages_.ToTerminate()) {
       t = GetCurrentTime();
-      round++;
       messages_.StartARound();
 
       runIncEval();
@@ -201,7 +213,7 @@ class Worker {
       std::is_base_of<MutationContext<fragment_t>, T>::value>::type
   processMutation() {
     context_->apply_mutation(fragment_, comm_spec_);
-    fragment_->PrepareToRunApp(comm_spec_, prepare_conf_);
+    fragment_->PrepareToRunApp(comm_spec_, prepare_conf_, pe_spec_);
   }
 
   template <typename T = context_t>
@@ -216,6 +228,7 @@ class Worker {
 
   CommSpec comm_spec_;
   PrepareConf prepare_conf_;
+  ParallelEngineSpec pe_spec_;
 };
 
 template <typename APP_T>
@@ -230,6 +243,9 @@ using AutoWorker =
 
 template <typename APP_T>
 using BatchShuffleWorker = Worker<APP_T, BatchShuffleMessageManager>;
+
+template <typename APP_T>
+using GatherScatterWorker = Worker<APP_T, GatherScatterMessageManager>;
 
 }  // namespace grape
 

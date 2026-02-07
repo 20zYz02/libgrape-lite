@@ -20,7 +20,6 @@ limitations under the License.
 
 #include "cdlp/cdlp_context.h"
 #include "cdlp/cdlp_utils.h"
-#include <iostream>//wuyufei
 
 namespace grape {
 
@@ -128,6 +127,7 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
       ctx.labels[v] = frag.GetOuterVertexId(v);
     });
 #endif
+
     PropagateLabel(frag, ctx, messages);
   }
 
@@ -156,6 +156,7 @@ class CDLP : public ParallelAppBase<FRAG_T, CDLPContext<FRAG_T>>,
 #ifdef PROFILING
     ctx.preprocess_time += GetCurrentTime();
 #endif
+
     PropagateLabel(frag, ctx, messages);
   }
 };

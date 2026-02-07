@@ -25,10 +25,10 @@ limitations under the License.
 #include "thread_pool.h"
 
 #define WORD_SIZE(n) (((n) + 63ul) >> 6)
-#define BYTE_SIZE(n) (((n) + 63ul) >> 3)
+#define BYTE_SIZE(n) (WORD_SIZE(n) * sizeof(uint64_t))
 
 #define WORD_INDEX(i) ((i) >> 6)
-#define BIT_OFFSET(i) ((i) &0x3f)
+#define BIT_OFFSET(i) ((i) & 0x3f)
 
 #define ROUND_UP(i) (((i) + 63ul) & (~63ul))
 #define ROUND_DOWN(i) ((i) & (~63ul))
@@ -146,8 +146,11 @@ class Bitset : public Allocator<uint64_t> {
         for (size_t i = 0; i < new_size_in_words; ++i) {
           new_data[i] = data_[i];
         }
-        __sync_fetch_and_and(new_data + new_size_in_words - 1,
-                             (1ul << BIT_OFFSET(size)) - 1);
+        if (BIT_OFFSET(size) > 0) {  // only need to clear the last word if the
+                                     // last word is not fully used
+          __sync_fetch_and_and(new_data + new_size_in_words - 1,
+                               (1ul << BIT_OFFSET(size)) - 1);
+        }
       } else if (size_in_words_ < new_size_in_words) {
         for (size_t i = 0; i < size_in_words_; ++i) {
           new_data[i] = data_[i];

@@ -38,21 +38,14 @@ template <typename VID_T, typename VDATA_T>
 struct Vertex {
   DEV_HOST Vertex() {}
 
-  DEV_HOST explicit Vertex(const VID_T& vid) : vid(vid), vdata(), secret(false) {}
+  DEV_HOST explicit Vertex(const VID_T& vid) : vid(vid), vdata() {}
   DEV_HOST Vertex(const VID_T& vid, const VDATA_T& vdata)
-      : vid(vid), vdata(vdata), secret(false) {}
+      : vid(vid), vdata(vdata) {}
   DEV_HOST Vertex(const VID_T& vid, VDATA_T&& vdata)
-      : vid(vid), vdata(std::move(vdata)), secret(false) {}
-  
-  DEV_HOST Vertex(const VID_T& vid, const VDATA_T& vdata, const bool secret)
-      : vid(vid), vdata(vdata), secret(secret) {}
-  DEV_HOST Vertex(const VID_T& vid, VDATA_T&& vdata, const bool secret)
-      : vid(vid), vdata(std::move(vdata)), secret(secret) {}
-  
-  DEV_HOST Vertex(const Vertex& vert) 
-      : vid(vert.vid), vdata(vert.vdata), secret(vert.secret) {}
+      : vid(vid), vdata(std::move(vdata)) {}
+  DEV_HOST Vertex(const Vertex& vert) : vid(vert.vid), vdata(vert.vdata) {}
   DEV_HOST Vertex(Vertex&& vert) noexcept
-      : vid(vert.vid), vdata(std::move(vert.vdata)), secret(vert.secret) {}
+      : vid(vert.vid), vdata(std::move(vert.vdata)) {}
 
   DEV_HOST ~Vertex() {}
 
@@ -62,13 +55,11 @@ struct Vertex {
     }
     vid = rhs.vid;
     vdata = rhs.vdata;
-    secret = rhs.secret;
     return *this;
   }
 
   VID_T vid;
   VDATA_T vdata;
-  bool secret;
 };
 
 /**
@@ -79,12 +70,9 @@ template <typename VID_T>
 struct Vertex<VID_T, EmptyType> {
   DEV_HOST Vertex() {}
 
-  DEV_HOST explicit Vertex(const VID_T& vid) : vid(vid), secret(false) {}
-  DEV_HOST Vertex(const VID_T& vid, const EmptyType&) 
-      : vid(vid), secret(false) {}
-  DEV_HOST Vertex(const VID_T& vid, const EmptyType&, bool secret) 
-      : vid(vid), secret(secret) {}
-  DEV_HOST Vertex(const Vertex& vert) : vid(vert.vid), secret(vert.secret) {}
+  DEV_HOST explicit Vertex(const VID_T& vid) : vid(vid) {}
+  DEV_HOST Vertex(const VID_T& vid, const EmptyType&) : vid(vid) {}
+  DEV_HOST Vertex(const Vertex& vert) : vid(vert.vid) {}
 
   DEV_HOST ~Vertex() {}
 
@@ -93,7 +81,6 @@ struct Vertex<VID_T, EmptyType> {
       return *this;
     }
     vid = rhs.vid;
-    secret = rhs.secret;
     return *this;
   }
 
@@ -101,7 +88,6 @@ struct Vertex<VID_T, EmptyType> {
     VID_T vid;
     EmptyType vdata;
   };
-  bool secret;
 };
 
 }  // namespace internal

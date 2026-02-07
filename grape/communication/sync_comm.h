@@ -95,8 +95,8 @@ static inline void send_buffer(const T* ptr, size_t len, int dst_worker_id,
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "sending large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "sending large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Send(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm);
     ptr += chunk_num;
@@ -120,8 +120,8 @@ static inline void isend_buffer(const T* ptr, size_t len, int dst_worker_id,
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "isending large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "isending large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
     MPI_Isend(ptr, chunk_size_in_bytes, MPI_CHAR, dst_worker_id, tag, comm,
@@ -147,8 +147,8 @@ static inline void recv_buffer(T* ptr, size_t len, int src_worker_id, int tag,
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "recving large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "recving large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Recv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
              MPI_STATUS_IGNORE);
@@ -177,8 +177,8 @@ static inline void irecv_buffer(T* ptr, size_t len, int src_worker_id, int tag,
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "irecving large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "irecving large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Irecv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
               &reqs[i]);
@@ -202,8 +202,8 @@ static inline void irecv_buffer(T* ptr, size_t len, int src_worker_id, int tag,
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "irecving large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "irecving large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Request req;
     MPI_Irecv(ptr, chunk_size_in_bytes, MPI_CHAR, src_worker_id, tag, comm,
@@ -236,8 +236,8 @@ static inline void bcast_buffer(T* ptr, size_t len, int root, MPI_Comm comm) {
   const size_t chunk_size_in_bytes = chunk_num * sizeof(T);
   int iter = len / chunk_num;
   size_t remaining = (len % chunk_num) * sizeof(T);
-  LOG(INFO) << "bcast large buffer in " << iter + (remaining != 0)
-            << " iterations";
+  VLOG(10) << "bcast large buffer in " << iter + (remaining != 0)
+           << " iterations";
   for (int i = 0; i < iter; ++i) {
     MPI_Bcast(ptr, chunk_size_in_bytes, MPI_CHAR, root, comm);
     ptr += chunk_num;
@@ -384,6 +384,68 @@ struct CommImpl<std::vector<T>,
   }
 
   static void bcast(std::vector<T>& vec, int root, MPI_Comm comm) {
+    int64_t len = vec.size();
+    bcast_small_buffer<int64_t>(&len, 1, root, comm);
+    vec.resize(len);
+    bcast_buffer<T>(vec.data(), len, root, comm);
+  }
+};
+
+template <class T, class ALLOC_T>
+struct CommImpl<Array<T, ALLOC_T>,
+                typename std::enable_if<std::is_pod<T>::value>::type> {
+  static void send(const Array<T, ALLOC_T>& vec, int dst_worker_id, int tag,
+                   MPI_Comm comm) {
+    int64_t len = vec.size();
+    CommImpl<int64_t>::send(len, dst_worker_id, tag, comm);
+    if (len > 0) {
+      send_buffer<T>(vec.data(), vec.size(), dst_worker_id, tag, comm);
+    }
+  }
+
+  static void send_partial(const Array<T, ALLOC_T>& vec, size_t from, size_t to,
+                           int dst_worker_id, int tag, MPI_Comm comm) {
+    int64_t len = to - from;
+    CommImpl<int64_t>::send(len, dst_worker_id, tag, comm);
+    if (len > 0) {
+      send_buffer<T>(vec.data() + from, len, dst_worker_id, tag, comm);
+    }
+  }
+
+  static void recv(Array<T, ALLOC_T>& vec, int src_worker_id, int tag,
+                   MPI_Comm comm) {
+    int64_t len;
+    CommImpl<int64_t>::recv(len, src_worker_id, tag, comm);
+    vec.resize(len);
+    if (len > 0) {
+      recv_buffer<T>(vec.data(), vec.size(), src_worker_id, tag, comm);
+    }
+  }
+
+  static void recv_at(Array<T, ALLOC_T>& vec, size_t offset, int src_worker_id,
+                      int tag, MPI_Comm comm) {
+    int64_t len;
+    CommImpl<int64_t>::recv(len, src_worker_id, tag, comm);
+    if (offset + len > vec.size()) {
+      vec.resize(offset + len);
+    }
+    if (len > 0) {
+      recv_buffer<T>(vec.data() + offset, len, src_worker_id, tag, comm);
+    }
+  }
+
+  template <typename ITER_T>
+  static void multiple_send(const Array<T, ALLOC_T>& vec,
+                            const ITER_T& worker_id_begin,
+                            const ITER_T& worker_id_end, int tag,
+                            MPI_Comm comm) {
+    for (ITER_T iter = worker_id_begin; iter != worker_id_end; ++iter) {
+      int dst_worker_id = *iter;
+      send(vec, dst_worker_id, tag, comm);
+    }
+  }
+
+  static void bcast(Array<T, ALLOC_T>& vec, int root, MPI_Comm comm) {
     int64_t len = vec.size();
     bcast_small_buffer<int64_t>(&len, 1, root, comm);
     vec.resize(len);
@@ -751,7 +813,7 @@ typename std::enable_if<std::is_pod<T>::value>::type FlatAllGather(
                    global.data(), counts.data(), displs.data(), MPI_CHAR, comm);
   } else {
     std::vector<MPI_Request> reqs;
-    std::vector<int64_t> offsets;
+    std::vector<int64_t> offsets(worker_num);
     int64_t sum = 0;
     for (int i = 0; i < worker_num; ++i) {
       offsets[i] = sum;

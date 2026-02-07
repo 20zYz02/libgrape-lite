@@ -20,6 +20,7 @@ limitations under the License.
 #include <glog/logging.h>
 
 #include "run_app_opt.h"
+#include "run_app_vc.h"
 
 int main(int argc, char* argv[]) {
   FLAGS_stderrthreshold = 0;
@@ -41,11 +42,11 @@ int main(int argc, char* argv[]) {
   std::string name = FLAGS_application;
   if (FLAGS_opt) {
     grape::RunOpt();
+  } else if (FLAGS_vc) {
+    grape::RunVC();
   } else {
     if (name.find("sssp") != std::string::npos) {
       grape::Run<int64_t, uint32_t, grape::EmptyType, double>();
-    } else if( name == "cdlp_selective" ){
-      grape::Run<int64_t, uint32_t, int, grape::EmptyType>();
     } else {
       grape::Run<int64_t, uint32_t, grape::EmptyType, grape::EmptyType>();
     }
